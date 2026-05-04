@@ -42,7 +42,7 @@
 #define TIMER_DIGIT_WIDTH 50
 #define TIMER_DIGIT_HEIGHT 150
 #define TIMER_SEGMENT_THICKNESS 8
-#define TIMER_CHAR_GAP 6
+#define TIMER_CHAR_GAP 16
 #define TIMER_COLON_WIDTH 14
 // cubic11_h_cjk is 11px square; at setTextSize(2) each CJK glyph is ~22px wide.
 #define CJK_SUBTITLE_GLYPH_PX 22
@@ -239,7 +239,9 @@ void drawBigDigits(const String &text, int y, uint16_t hourColor, uint16_t colon
     totalWidth += (text.charAt(i) == ':') ? TIMER_COLON_WIDTH : TIMER_DIGIT_WIDTH;
     if (i + 1 < text.length()) totalWidth += TIMER_CHAR_GAP;
   }
-  int x = (gfx->width() - totalWidth) / 2;
+  // Mathematical center looks slightly right-biased on this panel because the
+  // bright orange MM weighs more visually than the dark red HH; nudge left.
+  int x = ((gfx->width() - totalWidth) / 2) - 16;
   if (x < 0) x = 0;
   int section = 0; // 0=HH (before first ':'), 1=MM (after first ':')
   for (uint8_t i = 0; i < text.length(); i++) {
@@ -257,7 +259,8 @@ void drawBigDigits(const String &text, int y, uint16_t hourColor, uint16_t colon
 }
 
 void drawTimerText(uint32_t elapsedSeconds) {
-  drawBigDigits(formatElapsed(elapsedSeconds), 50, RGB565_ORANGE, RGB565_WHITE);
+  drawBigDigits(formatElapsed(elapsedSeconds), 50, RGB565_RED, RGB565_WHITE,
+                RGB565_ORANGE);
 }
 
 void drawButtonHint() {
@@ -301,7 +304,7 @@ void drawClockScreen() {
   }
 
   if (synced) {
-    drawBigDigits(clock, 50, RGB565_WHITE, RGB565_CYAN);
+    drawBigDigits(clock, 50, RGB565_RED, RGB565_WHITE, RGB565_ORANGE);
   }
   gfx->setTextColor(RGB565_DARKGREY);
   gfx->setTextSize(1);
@@ -321,21 +324,31 @@ void drawClockScreen() {
 
 void drawCounter(uint32_t elapsedSeconds) {
   gfx->fillScreen(RGB565_BLACK);
+
+  // Combined heading: "Last fed 结束喂养" / "Feeding now 开始喂养",
+  // centered on a single top line. Default font is 6x8 base; setTextSize(2)
+  // makes each ASCII char 12px wide. cubic11 CJK glyphs are ~22px wide at
+  // setTextSize(2). Chinese baseline aligned to y=24 sits next to the
+  // top-anchored ASCII title (y=8..y=24), bottom-aligned visually.
+  const int titleCharW = 12;
+  int titleW = activeCounter.title.length() * titleCharW;
+  bool hasSub = activeCounter.subtitle.length() > 0;
+  int subW = hasSub ? utf8CharCount(activeCounter.subtitle) * CJK_SUBTITLE_GLYPH_PX : 0;
+  int gap = hasSub ? titleCharW : 0;
+  int totalW = titleW + gap + subW;
+  int hx = (gfx->width() - totalW) / 2;
+  if (hx < 0) hx = 0;
+
   gfx->setTextColor(RGB565_YELLOW);
   gfx->setTextSize(2);
-  gfx->setCursor(14, 8);
+  gfx->setCursor(hx, 8);
   gfx->print(activeCounter.title);
 
-  if (activeCounter.subtitle.length() > 0) {
+  if (hasSub) {
     gfx->setFont(u8g2_font_cubic11_h_cjk);
     gfx->setTextSize(2);
     gfx->setTextColor(RGB565_YELLOW);
-    // u8g2 fonts position the cursor at the baseline. Place the subtitle in
-    // the top-right corner on the same visual line as the English title.
-    int subW = utf8CharCount(activeCounter.subtitle) * CJK_SUBTITLE_GLYPH_PX;
-    int sx = gfx->width() - subW - 8;
-    if (sx < 0) sx = 0;
-    gfx->setCursor(sx, 24);
+    gfx->setCursor(hx + titleW + gap, 24);
     gfx->print(activeCounter.subtitle);
     gfx->setFont();  // back to default 5x7 ASCII font
     gfx->setTextSize(2);
