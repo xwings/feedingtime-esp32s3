@@ -1,0 +1,9 @@
+firmware/.pio/
+firmware/.vscode/
+firmware/include/config.h
+firmware/include/config.local.h
+firmware/compile_commands.json
+gateway/data/
+gateway/__pycache__/
+gateway/.venv/
+*.log

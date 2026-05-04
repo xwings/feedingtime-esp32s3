@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% if sync_result %}
+<div class="banner banner-{{ sync_result }}">
+  Sync {{ sync_result }}{% if sync_msg %}: {{ sync_msg }}{% endif %}
+</div>
+{% endif %}
+
+<div class="tab-panel active" data-tab="records">
+
+{% if active %}
+<section class="active">
+  <h2>Active feeding</h2>
+  <p>Started <strong>{{ active.start_epoch | localtime(tz) }}</strong>
+     on <code>{{ active.device_id or '(unknown)' }}</code></p>
+</section>
+{% endif %}
+
+<section class="records">
+  <form method="post" id="records-form">
+    <div class="records-head">
+      <h2>Records ({{ total_records }})</h2>
+      <div class="bulk-actions">
+        <button type="submit" formaction="/sync">Upload</button>
+        <button type="submit" formaction="/records/save">Save</button>
+        <button type="submit" formaction="/records/delete" class="danger"
+                onclick="return confirm('Delete the selected record(s)?')">Delete</button>
+      </div>
+    </div>
+
+    <table class="records-table">
+      <thead>
+        <tr>
+          <th><input type="checkbox" id="check-all" title="Select all on page"></th>
+          <th>Date</th>
+          <th>Start</th>
+          <th>Stop</th>
+          <th>Duration</th>
+          <th>ml</th>
+          <th>Notes</th>
+          <th>Device</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in records %}
+        <tr>
+          <td>
+            <input type="checkbox" name="record_id" value="{{ r.id }}" class="row-check"
+                   {% if page == 1 and loop.index <= default_sync_count %}checked{% endif %}>
+          </td>
+          <td>
+            <input type="date" name="date_{{ r.id }}"
+                   value="{{ r.start_epoch | localdate_input(tz) }}" required>
+          </td>
+          <td>
+            <input type="time" step="1" name="start_time_{{ r.id }}"
+                   value="{{ r.start_epoch | localtime_only(tz) }}" required>
+          </td>
+          <td>
+            <input type="time" step="1" name="stop_time_{{ r.id }}"
+                   value="{{ (r.stop_epoch | localtime_only(tz)) if r.stop_epoch else '' }}">
+          </td>
+          <td>{{ r.start_epoch | duration(r.stop_epoch) or '—' }}</td>
+          <td>
+            <input type="number" name="volume_ml_{{ r.id }}" min="0" step="1"
+                   value="{{ r.volume_ml if r.volume_ml is not none else '' }}">
+          </td>
+          <td>
+            <input type="text" name="notes_{{ r.id }}"
+                   value="{{ r.notes or '' }}">
+          </td>
+          <td>
+            <input type="text" name="device_id_{{ r.id }}"
+                   value="{{ r.device_id or '' }}" size="10">
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="empty">No records yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </form>
+
+  {% if total_pages > 1 %}
+  <nav class="pagination">
+    {% if page > 1 %}
+      <a href="?page={{ page - 1 }}">&larr; Prev</a>
+    {% else %}
+      <span class="disabled">&larr; Prev</span>
+    {% endif %}
+    <span>Page {{ page }} of {{ total_pages }}</span>
+    {% if page < total_pages %}
+      <a href="?page={{ page + 1 }}">Next &rarr;</a>
+    {% else %}
+      <span class="disabled">Next &rarr;</span>
+    {% endif %}
+  </nav>
+  {% endif %}
+</section>
+
+<script>
+  document.getElementById('check-all')?.addEventListener('change', function (e) {
+    document.querySelectorAll('.row-check').forEach(c => { c.checked = e.target.checked; });
+  });
+</script>
+
+<section class="add-record">
+  <h2>Add record</h2>
+  <form method="post" action="/records" class="row-form">
+    <label>Date <input type="date" name="date" value="{{ now_date }}" required></label>
+    <label>Start <input type="time" step="1" name="start_time" value="{{ now_time }}" required></label>
+    <label>Stop <input type="time" step="1" name="stop_time" value="{{ now_time }}"></label>
+    <label>ml <input type="number" name="volume_ml" min="0" step="1"></label>
+    <label>Notes <input type="text" name="notes"></label>
+    <label>Device <input type="text" name="device_id"></label>
+    <button type="submit">Add</button>
+  </form>
+</section>
+
+</div><!-- /tab-panel records -->
+
+<div class="tab-panel" data-tab="config">
+
+<section class="config" id="config">
+  <h2>Configuration</h2>
+  <form method="post" action="/config" class="grid-form">
+    {% for key in config_keys_simple %}
+    <label>{{ key }}
+      <input type="text" name="{{ key }}" value="{{ config[key] | default('') }}">
+    </label>
+    {% endfor %}
+    <label class="full-width">webhook_message_template
+      <textarea name="webhook_message_template" rows="6">{{ config.webhook_message_template | default('') }}</textarea>
+    </label>
+    <label class="full-width">webhook_record_format
+      <textarea name="webhook_record_format" rows="3">{{ config.webhook_record_format | default('') }}</textarea>
+    </label>
+    <button type="submit">Save</button>
+  </form>
+  <p class="hint">
+    Template placeholders: <code>{records}</code> in message, and
+    <code>{date}</code> <code>{start_time}</code> <code>{stop_time}</code>
+    <code>{duration}</code> <code>{volume}</code> <code>{notes}</code>
+    <code>{device_id}</code> in each record line.
+  </p>
+</section>
+
+</div><!-- /tab-panel config -->
+
+{% endblock %}

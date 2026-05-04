@@ -1,0 +1,22 @@
+services:
+  gateway:
+    build: .
+    image: feeding-gateway:latest
+    container_name: feeding-gateway
+    restart: unless-stopped
+    ports:
+      # HOST:CONTAINER — change the left side to expose on a different host port.
+      - "8080:8080"
+    volumes:
+      # Host ./feeding holds the SQLite DB and any runtime config the gateway
+      # writes. Map to a different host path if you want it elsewhere.
+      - ./feeding:/feeding
+    environment:
+      # Empty = trust LAN, no auth. Set a non-empty token to require
+      # `Authorization: Bearer <token>` on /api/* and the web UI.
+      GATEWAY_TOKEN: ""
+      GATEWAY_DB_PATH: "/feeding/gateway.db"
+      GATEWAY_CONFIG_PATH: "/feeding/config.json"
+      GATEWAY_BIND_HOST: "0.0.0.0"
+      GATEWAY_BIND_PORT: "8080"
+      TZ: "Asia/Shanghai"

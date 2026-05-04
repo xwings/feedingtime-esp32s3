@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>feedingtime-esp32s3 gateway</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>feedingtime-esp32s3 gateway</h1>
+  <nav class="tabs">
+    <button type="button" class="tab-btn active" data-tab="records">Records</button>
+    <button type="button" class="tab-btn" data-tab="config">Configuration</button>
+  </nav>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+<script>
+  (function () {
+    const buttons = document.querySelectorAll('.tab-btn');
+    const panels = document.querySelectorAll('.tab-panel');
+    function activate(name) {
+      buttons.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+      panels.forEach(p => p.classList.toggle('active', p.dataset.tab === name));
+      try { history.replaceState(null, '', '#' + name); } catch (e) {}
+    }
+    buttons.forEach(b => b.addEventListener('click', () => activate(b.dataset.tab)));
+    const initial = (location.hash || '').replace('#', '') || 'records';
+    if (document.querySelector('.tab-btn[data-tab="' + initial + '"]')) activate(initial);
+  })();
+</script>
+</body>
+</html>
