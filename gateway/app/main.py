@@ -32,7 +32,7 @@ def filter_localtime(epoch: Optional[int], tz_name: str = "UTC") -> str:
     if not epoch:
         return ""
     return datetime.fromtimestamp(int(epoch), tz=zoneinfo(tz_name)).strftime(
-        "%Y-%m-%d %H:%M:%S"
+        "%Y-%m-%d %H:%M"
     )
 
 
@@ -45,7 +45,7 @@ def filter_localdate_input(epoch: Optional[int], tz_name: str = "UTC") -> str:
 def filter_localtime_only(epoch: Optional[int], tz_name: str = "UTC") -> str:
     if not epoch:
         return ""
-    return datetime.fromtimestamp(int(epoch), tz=zoneinfo(tz_name)).strftime("%H:%M:%S")
+    return datetime.fromtimestamp(int(epoch), tz=zoneinfo(tz_name)).strftime("%H:%M")
 
 
 def filter_duration(start: Optional[int], stop: Optional[int]) -> str:
@@ -204,7 +204,7 @@ async def ui_home(
             "config": cfg,
             "tz": tz_name,
             "now_date": now.strftime("%Y-%m-%d"),
-            "now_time": now.strftime("%H:%M:%S"),
+            "now_time": now.strftime("%H:%M"),
             "page": page,
             "total_pages": total_pages,
             "total_records": total,

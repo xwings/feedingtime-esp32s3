@@ -39,11 +39,13 @@
 
 #define KEY_POLL_MS 60
 #define BUTTON_DEBOUNCE_MS 80
-#define TIMER_DIGIT_WIDTH 28
-#define TIMER_DIGIT_HEIGHT 110
-#define TIMER_SEGMENT_THICKNESS 6
-#define TIMER_CHAR_GAP 4
-#define TIMER_COLON_WIDTH 10
+#define TIMER_DIGIT_WIDTH 50
+#define TIMER_DIGIT_HEIGHT 150
+#define TIMER_SEGMENT_THICKNESS 8
+#define TIMER_CHAR_GAP 6
+#define TIMER_COLON_WIDTH 14
+// cubic11_h_cjk is 11px square; at setTextSize(2) each CJK glyph is ~22px wide.
+#define CJK_SUBTITLE_GLYPH_PX 22
 
 Arduino_DataBus *bus = new Arduino_ESP32LCD8(LCD_DC, LCD_CS, LCD_WR, LCD_RD,
                                              LCD_D0, LCD_D1, LCD_D2, LCD_D3,
@@ -148,16 +150,15 @@ String currentTimestamp() {
   struct tm timeinfo;
   if (!getLocalTime(&timeinfo, 0)) return String("(time not synced)");
   char buf[32];
-  strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &timeinfo);
+  strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M", &timeinfo);
   return String(buf);
 }
 
 String formatElapsed(uint32_t seconds) {
   uint32_t hours = seconds / 3600;
   uint32_t minutes = (seconds % 3600) / 60;
-  uint32_t secs = seconds % 60;
-  char buffer[16];
-  snprintf(buffer, sizeof(buffer), "%02lu:%02lu:%02lu", (unsigned long)hours, (unsigned long)minutes, (unsigned long)secs);
+  char buffer[8];
+  snprintf(buffer, sizeof(buffer), "%02lu:%02lu", (unsigned long)hours, (unsigned long)minutes);
   return String(buffer);
 }
 
@@ -165,10 +166,21 @@ bool getClockText(String &out) {
   struct tm timeinfo;
   if (!getLocalTime(&timeinfo, 0)) return false;
   if (timeinfo.tm_year < (2024 - 1900)) return false;
-  char buf[16];
-  snprintf(buf, sizeof(buf), "%02d:%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+  char buf[8];
+  snprintf(buf, sizeof(buf), "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
   out = String(buf);
   return true;
+}
+
+// Counts characters in a UTF-8 string (each lead byte; continuation bytes
+// have 0b10xx_xxxx). Used to width-align CJK strings whose .length() is bytes.
+int utf8CharCount(const String &s) {
+  int count = 0;
+  for (size_t i = 0; i < s.length(); i++) {
+    uint8_t b = (uint8_t)s.charAt(i);
+    if ((b & 0xC0) != 0x80) count++;
+  }
+  return count;
 }
 
 bool getDateText(String &out) {
@@ -215,24 +227,29 @@ void drawTimerColon(int x, int y, uint16_t color) {
   const int dot = TIMER_SEGMENT_THICKNESS + 2;
   const int dotX = x + ((TIMER_COLON_WIDTH - dot) / 2);
   const int centerY = y + (TIMER_DIGIT_HEIGHT / 2);
-  gfx->fillRect(dotX, centerY - 30, dot, dot, color);
-  gfx->fillRect(dotX, centerY + 22, dot, dot, color);
+  const int offset = TIMER_DIGIT_HEIGHT / 4;
+  gfx->fillRect(dotX, centerY - offset, dot, dot, color);
+  gfx->fillRect(dotX, centerY + offset - dot, dot, dot, color);
 }
 
-void drawBigDigits(const String &text, int y, uint16_t digitColor, uint16_t colonColor,
-                   uint16_t middleColor = RGB565_MAGENTA) {
-  const int totalWidth = (6 * TIMER_DIGIT_WIDTH) + (2 * TIMER_COLON_WIDTH) + (7 * TIMER_CHAR_GAP);
+void drawBigDigits(const String &text, int y, uint16_t hourColor, uint16_t colonColor,
+                   uint16_t minuteColor = RGB565_MAGENTA) {
+  int totalWidth = 0;
+  for (size_t i = 0; i < text.length(); i++) {
+    totalWidth += (text.charAt(i) == ':') ? TIMER_COLON_WIDTH : TIMER_DIGIT_WIDTH;
+    if (i + 1 < text.length()) totalWidth += TIMER_CHAR_GAP;
+  }
   int x = (gfx->width() - totalWidth) / 2;
   if (x < 0) x = 0;
-  int section = 0; // 0=HH, 1=MM, 2=SS
+  int section = 0; // 0=HH (before first ':'), 1=MM (after first ':')
   for (uint8_t i = 0; i < text.length(); i++) {
     char c = text.charAt(i);
     if (c == ':') {
       drawTimerColon(x, y, colonColor);
       x += TIMER_COLON_WIDTH + TIMER_CHAR_GAP;
-      if (section < 2) section++;
+      if (section < 1) section++;
     } else {
-      uint16_t color = (section == 1) ? middleColor : digitColor;
+      uint16_t color = (section == 0) ? hourColor : minuteColor;
       drawTimerDigit(x, y, c - '0', color);
       x += TIMER_DIGIT_WIDTH + TIMER_CHAR_GAP;
     }
@@ -240,7 +257,7 @@ void drawBigDigits(const String &text, int y, uint16_t digitColor, uint16_t colo
 }
 
 void drawTimerText(uint32_t elapsedSeconds) {
-  drawBigDigits(formatElapsed(elapsedSeconds), 60, RGB565_WHITE, RGB565_CYAN);
+  drawBigDigits(formatElapsed(elapsedSeconds), 50, RGB565_ORANGE, RGB565_WHITE);
 }
 
 void drawButtonHint() {
@@ -313,8 +330,12 @@ void drawCounter(uint32_t elapsedSeconds) {
     gfx->setFont(u8g2_font_cubic11_h_cjk);
     gfx->setTextSize(2);
     gfx->setTextColor(RGB565_YELLOW);
-    // u8g2 fonts position by baseline; second line under the English title.
-    gfx->setCursor(14, 50);
+    // u8g2 fonts position the cursor at the baseline. Place the subtitle in
+    // the top-right corner on the same visual line as the English title.
+    int subW = utf8CharCount(activeCounter.subtitle) * CJK_SUBTITLE_GLYPH_PX;
+    int sx = gfx->width() - subW - 8;
+    if (sx < 0) sx = 0;
+    gfx->setCursor(sx, 24);
     gfx->print(activeCounter.subtitle);
     gfx->setFont();  // back to default 5x7 ASCII font
     gfx->setTextSize(2);
@@ -330,13 +351,13 @@ void drawCounter(uint32_t elapsedSeconds) {
     int w = stamp.length() * charW;
     int x = gfx->width() - w - 8;
     if (x < 0) x = 0;
-    gfx->setCursor(x, 188);
+    gfx->setCursor(x, 208);
     gfx->print(stamp);
   }
 
   gfx->setTextColor(RGB565_DARKGREY);
   gfx->setTextSize(1);
-  gfx->setCursor(14, 226);
+  gfx->setCursor(14, 228);
   gfx->println(gatewayMode() ? "K2 toggle  K1 next (hold=sync)" : "K2 toggle  K1 next");
   flushDisplay();
 }
@@ -378,16 +399,16 @@ void drawHistoryScreen() {
 
       char line[48];
       if (s.stopEpoch == 0) {
-        snprintf(line, sizeof(line), "%u. %02d:%02d:%02d -  ...",
+        snprintf(line, sizeof(line), "%u. %02d:%02d -  ...",
                  (unsigned)(i + 1),
-                 tmStart.tm_hour, tmStart.tm_min, tmStart.tm_sec);
+                 tmStart.tm_hour, tmStart.tm_min);
       } else {
         struct tm tmStop;
         localtime_r(&s.stopEpoch, &tmStop);
-        snprintf(line, sizeof(line), "%u. %02d:%02d:%02d - %02d:%02d:%02d",
+        snprintf(line, sizeof(line), "%u. %02d:%02d - %02d:%02d",
                  (unsigned)(i + 1),
-                 tmStart.tm_hour, tmStart.tm_min, tmStart.tm_sec,
-                 tmStop.tm_hour, tmStop.tm_min, tmStop.tm_sec);
+                 tmStart.tm_hour, tmStart.tm_min,
+                 tmStop.tm_hour, tmStop.tm_min);
       }
       if (y + lineH > 218) break;
       gfx->setTextColor(s.stopEpoch == 0 ? RGB565_YELLOW : RGB565_WHITE);
