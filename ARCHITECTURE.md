@@ -77,6 +77,43 @@ LCD_CAM and I²C don't initialize cleanly in parallel on the DNESP32S3B:
 `gfx->begin()` (LCD_CAM) must run *before* `Wire.begin()`, or the chip
 hangs.
 
+## Alarm
+
+Triggers when the counter is in **Last fed** mode and elapsed seconds reach
+`ALARM_MINUTES * 60`. Implementation lives in `firmware/src/main.cpp`:
+
+- **One-shot per session.** Each session is keyed by its `start_epoch`
+  (feeding) or `stop_epoch` (last fed). Once dismissed, the firing flag stays
+  off until `activeCounter.sessionEpoch` changes — so gateway polls that
+  re-apply the same state don't re-trigger.
+- **View-independent trigger.** `tickAlarmCheck()` runs every loop pass
+  regardless of the on-screen view; sitting on the clock view does not skip
+  the trigger. When firing starts, the view auto-switches to the counter.
+- **Audio path.** I2S0 master TX → ES8311 codec → speaker amp. The codec
+  derives MCLK from BCLK (1.024 MHz at 16 kHz / 32-bit slots), avoiding the
+  need for a separate MCLK pin. The amp's enable line sits on XL9555 P0.5,
+  which is asserted in the same call that turns on the LCD backlight.
+- **Silent mode.** With `ALARM_VOLUME 0`, the I2S/codec init is skipped
+  entirely (`#if ALARM_VOLUME != 0`) and the PA amp stays off — no idle
+  hum. The trigger logic still fires; only the speaker is silent.
+- **Dismiss.** K1 short or long press, OR after `ALARM_DURATION_SEC`. K1
+  while firing is consumed by the dismiss and does NOT cycle view or trigger
+  sync.
+
+## Audio pin map (Alientek DNESP32S3B / atk-dnesp32s3-box variant)
+
+```text
+I2S BCLK  = GPIO 21
+I2S WS    = GPIO 13
+I2S DOUT  = GPIO 14
+I2S MCLK  = (unused — derived from BCLK)
+Codec I²C = SDA GPIO 48 / SCL GPIO 45 (shared with XL9555)
+Codec addr = 0x18 (ES8311)
+PA enable = XL9555 P0.5 (high = amp on)
+```
+
+Confirmed against the xiaozhi-esp32 `atk-dnesp32s3-box` board config.
+
 ## Concurrency on the device
 
 - Core 1 (Arduino main loop): button polling, drawing, UI tick.

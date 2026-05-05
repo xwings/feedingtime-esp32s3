@@ -5,11 +5,13 @@
 #include <NetworkClientSecure.h>
 #include <WiFi.h>
 #include <Wire.h>
+#include <driver/i2s_std.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
 #include <time.h>
 #include "config.h"
+#include "es8311.h"
 
 // DNESP32S3B (Alientek) hardware
 // LCD: ST7789V via parallel 8080 8-bit (LCD_CAM peripheral), 320x240
@@ -26,16 +28,23 @@
 #define LCD_D6 9
 #define LCD_D7 46
 
-// I2C bus -> XL9555 IO expander (PCA9555 compatible)
+// I2C bus -> XL9555 IO expander (PCA9555 compatible) + ES8311 audio codec
 #define I2C_SDA 48
 #define I2C_SCL 45
 #define XL9555_ADDR 0x20
 #define XL9555_INPUT0 0x00
 #define XL9555_OUTPUT0 0x02
 #define XL9555_CONFIG0 0x06
+#define XL_PA_PIN 5         // P0.5 high enables ES8311 speaker amplifier
 #define XL_BACKLIGHT_PIN 7  // P0.7 high enables LCD backlight
 #define XL_KEY1_PIN 4       // P0.4 (cycle view / hold = sync)
 #define XL_KEY2_PIN 3       // P0.3 (feeding toggle)
+
+// I2S to ES8311 codec (mclk derived from BCLK, no MCLK pin needed)
+#define I2S_PIN_BCLK 21
+#define I2S_PIN_WS   13
+#define I2S_PIN_DOUT 14
+#define I2S_SAMPLE_RATE 16000
 
 #define KEY_POLL_MS 60
 #define BUTTON_DEBOUNCE_MS 80
@@ -89,7 +98,19 @@ struct ActiveCounter {
   String subtitle;
   uint32_t baseElapsedSeconds = 0;
   uint32_t startedAtMs = 0;
+  // Identifies the underlying session — start_epoch when feeding, stop_epoch
+  // when "Last fed". Used by the alarm to tell "same session, already
+  // dismissed" from "new session, re-arm".
+  time_t sessionEpoch = 0;
 } activeCounter;
+
+// Alarm state. Fires once per "Last fed" session at ALARM_MINUTES, then stays
+// silent until either K1 dismiss or a new session begins.
+bool alarmFiring = false;
+time_t alarmDismissedForEpoch = 0;
+uint32_t alarmLastToggleMs = 0;
+uint32_t alarmFiringStartMs = 0;
+bool alarmToneOn = false;
 
 // Gateway client state
 struct PendingEvent {
@@ -113,7 +134,13 @@ bool xl9555WriteReg(uint8_t reg, uint8_t val) {
 }
 
 bool xl9555EnableBacklight() {
-  uint8_t mask = 1 << (XL_BACKLIGHT_PIN & 0x07);
+  // P0.7 = LCD backlight enable. P0.5 = audio amp PA enable — only powered
+  // when ALARM_VOLUME > 0; otherwise the amp stays off so the speaker can't
+  // hum or pop on idle.
+  uint8_t mask = (1 << XL_BACKLIGHT_PIN);
+#if ALARM_VOLUME != 0
+  mask |= (1 << XL_PA_PIN);
+#endif
   if (!xl9555WriteReg(XL9555_OUTPUT0, mask)) return false;
   return xl9555WriteReg(XL9555_CONFIG0, ~mask & 0xFF);
 }
@@ -243,11 +270,14 @@ void drawBigDigits(const String &text, int y, uint16_t hourColor, uint16_t colon
   // bright orange MM weighs more visually than the dark red HH; nudge left.
   int x = ((gfx->width() - totalWidth) / 2) - 16;
   if (x < 0) x = 0;
+  // Heartbeat: 500ms on, 500ms off — one full blink per second. Both clock
+  // and counter tickers redraw at 500ms to match.
+  bool showColon = ((millis() / 500) & 1U) == 0;
   int section = 0; // 0=HH (before first ':'), 1=MM (after first ':')
   for (uint8_t i = 0; i < text.length(); i++) {
     char c = text.charAt(i);
     if (c == ':') {
-      drawTimerColon(x, y, colonColor);
+      if (showColon) drawTimerColon(x, y, colonColor);
       x += TIMER_COLON_WIDTH + TIMER_CHAR_GAP;
       if (section < 1) section++;
     } else {
@@ -458,7 +488,13 @@ void redrawCurrentView() {
   }
 }
 
+void alarmStop();
+
 void cycleView() {
+  if (alarmFiring) {
+    alarmStop();
+    return;
+  }
   for (int i = 0; i < 3; i++) {
     currentView = (ViewMode)((currentView + 1) % 3);
     if (currentView == VIEW_COUNTER && !activeCounter.active) continue;
@@ -468,15 +504,161 @@ void cycleView() {
 }
 
 void setCounter(const String &title, const String &subtitle = "",
-                uint32_t baseElapsedSeconds = 0) {
+                uint32_t baseElapsedSeconds = 0, time_t sessionEpoch = 0) {
   activeCounter.active = true;
   activeCounter.title = title;
   activeCounter.subtitle = subtitle;
   activeCounter.baseElapsedSeconds = baseElapsedSeconds;
   activeCounter.startedAtMs = millis();
+  activeCounter.sessionEpoch = sessionEpoch;
   lastCounterDrawMs = 0;
   currentView = VIEW_COUNTER;
   drawCounter(baseElapsedSeconds);
+}
+
+// Audio output: I2S0 → ES8311 codec → onboard speaker.
+i2s_chan_handle_t i2s_tx = nullptr;
+es8311_handle_t es8311 = nullptr;
+// Stereo 16-bit samples. 256 frames = 16ms at 16kHz; we re-pump it each tick.
+static int16_t toneBuf[512];
+static int16_t silenceBuf[512] = {0};
+
+void buildToneBuf() {
+  // ALARM_TONE_HZ square wave at I2S_SAMPLE_RATE, written to L+R.
+  int samplesPerHalfPeriod = (I2S_SAMPLE_RATE / ALARM_TONE_HZ) / 2;
+  if (samplesPerHalfPeriod < 1) samplesPerHalfPeriod = 1;
+  const int16_t amp = 16000;
+  for (int i = 0; i < 256; i++) {
+    int16_t v = ((i / samplesPerHalfPeriod) & 1) ? amp : -amp;
+    toneBuf[i * 2]     = v;
+    toneBuf[i * 2 + 1] = v;
+  }
+}
+
+void alarmInit() {
+#if ALARM_VOLUME == 0
+  // Silent mode: skip the entire audio stack. Trigger logic still fires,
+  // serial log still prints, view still switches — just no sound.
+  Serial.println("Audio disabled (ALARM_VOLUME=0)");
+  return;
+#endif
+  buildToneBuf();
+
+  // I2S0 TX, master, 16kHz/16-bit/stereo. 32-bit slot width keeps BCLK at
+  // 1.024 MHz which matches an entry in the ES8311 coeff_div table when the
+  // codec derives MCLK from BCLK.
+  i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
+  if (i2s_new_channel(&chan_cfg, &i2s_tx, nullptr) != ESP_OK) {
+    Serial.println("i2s_new_channel failed");
+    return;
+  }
+
+  i2s_std_slot_config_t slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO);
+  slot_cfg.slot_bit_width = I2S_SLOT_BIT_WIDTH_32BIT;
+  slot_cfg.ws_width = 32;
+
+  i2s_std_config_t std_cfg = {
+    .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(I2S_SAMPLE_RATE),
+    .slot_cfg = slot_cfg,
+    .gpio_cfg = {
+      .mclk = I2S_GPIO_UNUSED,
+      .bclk = (gpio_num_t)I2S_PIN_BCLK,
+      .ws   = (gpio_num_t)I2S_PIN_WS,
+      .dout = (gpio_num_t)I2S_PIN_DOUT,
+      .din  = I2S_GPIO_UNUSED,
+      .invert_flags = { .mclk_inv = false, .bclk_inv = false, .ws_inv = false },
+    },
+  };
+  if (i2s_channel_init_std_mode(i2s_tx, &std_cfg) != ESP_OK) {
+    Serial.println("i2s_channel_init_std_mode failed");
+    return;
+  }
+  // Channel stays disabled at idle; alarmStart enables it. This way the
+  // codec never receives stale DMA junk between alarms.
+  i2s_channel_disable(i2s_tx);
+
+  // ES8311 codec on the same I2C bus that XL9555 uses (Wire). The lib uses
+  // Arduino Wire under the hood; the i2c_port_t arg is ignored.
+  es8311 = es8311_create(I2C_NUM_0, ES8311_ADDRESS_0);
+  if (!es8311) {
+    Serial.println("es8311_create failed");
+    return;
+  }
+  es8311_clock_config_t clk_cfg = {
+    .mclk_inverted = false,
+    .sclk_inverted = false,
+    .mclk_from_mclk_pin = false,  // derive from BCLK = 1.024 MHz
+    .mclk_frequency = 0,
+    .sample_frequency = I2S_SAMPLE_RATE,
+  };
+  if (es8311_init(es8311, &clk_cfg, ES8311_RESOLUTION_16, ES8311_RESOLUTION_16) != ESP_OK) {
+    Serial.println("es8311_init failed");
+    return;
+  }
+  // Map ALARM_VOLUME (0..5) -> codec voice volume (0..100). The codec's
+  // volume register is logarithmic (~0.5 dB per LSB), but the lib's
+  // volume_set does a linear 0..100 → reg mapping, so low input values fall
+  // off a cliff (vol=25 ≈ -96 dB, inaudible). These values are picked to
+  // give roughly: 1=-36 dB, 2=-24 dB, 3=-16 dB, 4=-8 dB, 5=0 dB.
+  static const int volMap[6] = { 0, 72, 81, 87, 94, 100 };
+  int v = ALARM_VOLUME;
+  if (v < 0) v = 0;
+  if (v > 5) v = 5;
+  if (v == 0) {
+    es8311_voice_mute(es8311, true);
+  } else {
+    es8311_voice_mute(es8311, false);
+    es8311_voice_volume_set(es8311, volMap[v], nullptr);
+  }
+  es8311_microphone_config(es8311, false);
+  Serial.printf("Audio init OK (vol=%d -> %d)\n", v, volMap[v]);
+}
+
+void alarmStop() {
+  alarmFiring = false;
+  alarmToneOn = false;
+  alarmDismissedForEpoch = activeCounter.sessionEpoch;
+  if (i2s_tx) i2s_channel_disable(i2s_tx);  // stops DMA → codec goes silent
+}
+
+void alarmStart() {
+  alarmFiring = true;
+  alarmFiringStartMs = millis();
+  alarmLastToggleMs = millis();
+  alarmToneOn = true;
+  if (i2s_tx) i2s_channel_enable(i2s_tx);
+}
+
+// 200ms tone / 200ms silence — attention-getting but not painful. Pump each
+// loop pass so DMA never starves while firing. Also self-dismisses after
+// ALARM_DURATION_SEC if K1 hasn't been pressed.
+void alarmTick() {
+  if (!alarmFiring) return;
+  if (millis() - alarmFiringStartMs >= (uint32_t)ALARM_DURATION_SEC * 1000U) {
+    Serial.println("Alarm auto-dismissed (timeout)");
+    alarmStop();
+    return;
+  }
+  if (!i2s_tx) return;
+  if (millis() - alarmLastToggleMs >= 200) {
+    alarmLastToggleMs = millis();
+    alarmToneOn = !alarmToneOn;
+  }
+  size_t bw;
+  i2s_channel_write(i2s_tx,
+                    alarmToneOn ? (const void *)toneBuf : (const void *)silenceBuf,
+                    sizeof(toneBuf),
+                    &bw,
+                    pdMS_TO_TICKS(5));
+}
+
+void checkAlarmTrigger(uint32_t elapsedSeconds) {
+  if (alarmFiring) return;
+  if (activeCounter.title != "Last fed") return;
+  if (activeCounter.sessionEpoch == 0) return;
+  if (activeCounter.sessionEpoch == alarmDismissedForEpoch) return;
+  if (elapsedSeconds < (uint32_t)ALARM_MINUTES * 60) return;
+  alarmStart();
 }
 
 void drawSyncStatus(const String &title, const String &body, uint16_t titleColor) {
@@ -583,6 +765,7 @@ void applyGatewayState(JsonDocument &doc) {
     activeCounter.subtitle = "开始喂养";
     activeCounter.baseElapsedSeconds = (now > startEpoch) ? (uint32_t)(now - startEpoch) : 0;
     activeCounter.startedAtMs = millis();
+    activeCounter.sessionEpoch = startEpoch;
   } else if (feedHistoryCount > 0) {
     size_t lastIdx = (feedHistoryHead + HISTORY_SIZE - 1) % HISTORY_SIZE;
     const FeedSession &s = feedHistory[lastIdx];
@@ -592,6 +775,7 @@ void applyGatewayState(JsonDocument &doc) {
       activeCounter.subtitle = "结束喂养";
       activeCounter.baseElapsedSeconds = (now > s.stopEpoch) ? (uint32_t)(now - s.stopEpoch) : 0;
       activeCounter.startedAtMs = millis();
+      activeCounter.sessionEpoch = s.stopEpoch;
     }
   } else {
     activeCounter.active = false;
@@ -698,10 +882,15 @@ void toggleFeeding() {
   }
 
   setCounter(feedingActive ? "Feeding now" : "Last fed",
-             feedingActive ? "开始喂养" : "结束喂养");
+             feedingActive ? "开始喂养" : "结束喂养",
+             0, now);
 }
 
 void k1LongPress() {
+  if (alarmFiring) {
+    alarmStop();
+    return;
+  }
   if (!gatewayMode()) return;  // standalone has nothing to sync
   drawSyncStatus("Sync", "Posting...", RGB565_CYAN);
   bool ok = gatewayTriggerSync();
@@ -720,15 +909,44 @@ void k1LongPress() {
 
 void updateCounter() {
   if (currentView != VIEW_COUNTER || !activeCounter.active) return;
-  if (millis() - lastCounterDrawMs < 1000) return;
+  if (millis() - lastCounterDrawMs < 500) return;
   lastCounterDrawMs = millis();
   uint32_t elapsed = activeCounter.baseElapsedSeconds + ((millis() - activeCounter.startedAtMs) / 1000);
   drawCounter(elapsed);
 }
 
+// Runs from loop() regardless of which view is on screen — otherwise sitting
+// on the clock view past the threshold would never trigger.
+void tickAlarmCheck() {
+  if (!activeCounter.active) return;
+  uint32_t elapsed = activeCounter.baseElapsedSeconds + ((millis() - activeCounter.startedAtMs) / 1000);
+
+  static uint32_t lastDebugMs = 0;
+  if (millis() - lastDebugMs > 30000) {
+    lastDebugMs = millis();
+    Serial.printf("[alarm] active=%d title=[%s] elapsed=%us threshold=%us session=%ld dismissed=%ld firing=%d\n",
+                  activeCounter.active ? 1 : 0,
+                  activeCounter.title.c_str(),
+                  (unsigned)elapsed,
+                  (unsigned)((uint32_t)ALARM_MINUTES * 60),
+                  (long)activeCounter.sessionEpoch,
+                  (long)alarmDismissedForEpoch,
+                  alarmFiring ? 1 : 0);
+  }
+
+  bool wasFiring = alarmFiring;
+  checkAlarmTrigger(elapsed);
+  if (alarmFiring && !wasFiring) {
+    Serial.printf("Alarm fired at elapsed=%us session=%ld\n", (unsigned)elapsed, (long)activeCounter.sessionEpoch);
+    currentView = VIEW_COUNTER;
+    lastCounterDrawMs = 0;
+    drawCounter(elapsed);
+  }
+}
+
 void updateClockScreen() {
   if (currentView != VIEW_CLOCK) return;
-  if (millis() - lastClockDrawMs < 1000) return;
+  if (millis() - lastClockDrawMs < 500) return;
   lastClockDrawMs = millis();
   drawClockScreen();
 }
@@ -829,6 +1047,8 @@ void setup() {
   Wire.setPins(I2C_SDA, I2C_SCL);
   Wire.begin();
   Wire.setClock(100000);
+
+  alarmInit();
   if (xl9555EnableBacklight()) {
     xl9555Ready = true;
     Serial.println("Backlight ON");
@@ -886,6 +1106,8 @@ void loop() {
 
   updateCounter();
   updateClockScreen();
+  tickAlarmCheck();
+  alarmTick();
   pollKeys();
   handleButtonPressLong(k1Button, k1IsPressed, cycleView, k1LongPress, K1_LONG_PRESS_MS);
   handleButtonRelease(k2Button, k2IsPressed, toggleFeeding);
