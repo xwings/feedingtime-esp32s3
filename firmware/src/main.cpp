@@ -656,8 +656,16 @@ void checkAlarmTrigger(uint32_t elapsedSeconds) {
   if (alarmFiring) return;
   if (activeCounter.title != "Last fed") return;
   if (activeCounter.sessionEpoch == 0) return;
-  if (activeCounter.sessionEpoch == alarmDismissedForEpoch) return;
   if (elapsedSeconds < (uint32_t)ALARM_MINUTES * 60) return;
+  if (activeCounter.sessionEpoch == alarmDismissedForEpoch) {
+    static uint32_t lastBlockLog = 0;
+    if (millis() - lastBlockLog > 60000) {
+      lastBlockLog = millis();
+      Serial.printf("[alarm] blocked: session=%ld already dismissed\n",
+                    (long)activeCounter.sessionEpoch);
+    }
+    return;
+  }
   alarmStart();
 }
 
@@ -760,6 +768,9 @@ void applyGatewayState(JsonDocument &doc) {
   if (feedingActive) {
     JsonObject act = active.as<JsonObject>();
     time_t startEpoch = (time_t)(long)act["start_epoch"];
+    if (activeCounter.title != "Feeding now") {
+      alarmDismissedForEpoch = 0;  // re-arm: a new feed cycle just began
+    }
     activeCounter.active = true;
     activeCounter.title = "Feeding now";
     activeCounter.subtitle = "开始喂养";
@@ -872,6 +883,7 @@ void toggleFeeding() {
   xSemaphoreTake(stateMutex, portMAX_DELAY);
   if (feedingActive) {
     recordFeedStart();
+    alarmDismissedForEpoch = 0;  // re-arm: starting a new feed cycle
   } else {
     recordFeedStop();
   }

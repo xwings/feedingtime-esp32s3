@@ -22,10 +22,10 @@
     <div class="records-head">
       <h2>Records ({{ total_records }})</h2>
       <div class="bulk-actions">
-        <button type="submit" formaction="/sync">Upload</button>
         <button type="submit" formaction="/records/save">Save</button>
         <button type="submit" formaction="/records/delete" class="danger"
                 onclick="return confirm('Delete the selected record(s)?')">Delete</button>
+        <button type="submit" formaction="/sync">Upload</button>
       </div>
     </div>
 
