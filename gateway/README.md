@@ -74,4 +74,4 @@ The scheduler checks once a minute and posts the newest
 | `auto_sync_enabled` | `0` | `1` to enable scheduler |
 | `auto_sync_hours` | `6` | interval in hours |
 | `timezone` | `UTC` | IANA name, e.g. `Asia/Shanghai` |
-| `ui_show_count` | `10` | rows per page on the web UI |
+| `ui_show_count` | `10` | dates per page on the web UI (records grouped by date; rows from the last 24h are pre-checked for upload) |

@@ -176,30 +176,41 @@ async def ui_home(
 ):
     cfg = config.load()
     try:
-        page_size = int(cfg.get("ui_show_count") or "10")
+        dates_per_page = int(cfg.get("ui_show_count") or "10")
     except ValueError:
-        page_size = 10
-    if page_size < 1:
-        page_size = 10
-    total = db.count_records()
-    total_pages = max(1, (total + page_size - 1) // page_size)
+        dates_per_page = 10
+    if dates_per_page < 1:
+        dates_per_page = 10
+    tz_name = cfg.get("timezone") or "UTC"
+    tz = zoneinfo(tz_name)
+
+    all_records = db.list_records()
+    by_date: dict[str, list] = {}
+    date_order: list[str] = []
+    for r in all_records:
+        d = datetime.fromtimestamp(int(r["start_epoch"]), tz=tz).strftime("%Y-%m-%d")
+        if d not in by_date:
+            by_date[d] = []
+            date_order.append(d)
+        by_date[d].append(r)
+    total_dates = len(date_order)
+    total_pages = max(1, (total_dates + dates_per_page - 1) // dates_per_page)
     if page < 1:
         page = 1
     if page > total_pages:
         page = total_pages
-    offset = (page - 1) * page_size
-    records = db.list_records(limit=page_size, offset=offset)
-    try:
-        default_sync_count = int(cfg.get("webhook_default_sync_count") or "8")
-    except ValueError:
-        default_sync_count = 8
-    tz_name = cfg.get("timezone") or "UTC"
-    now = datetime.now(tz=zoneinfo(tz_name))
+    start = (page - 1) * dates_per_page
+    groups = [{"date": d, "records": by_date[d]} for d in date_order[start:start + dates_per_page]]
+
+    now_epoch = int(time.time())
+    auto_check_cutoff = now_epoch - 86400
+
+    now = datetime.now(tz=tz)
     return templates.TemplateResponse(
         "index.html",
         {
             "request": request,
-            "records": records,
+            "groups": groups,
             "active": db.get_active(),
             "config": cfg,
             "tz": tz_name,
@@ -207,9 +218,10 @@ async def ui_home(
             "now_time": now.strftime("%H:%M"),
             "page": page,
             "total_pages": total_pages,
-            "total_records": total,
-            "page_size": page_size,
-            "default_sync_count": default_sync_count,
+            "total_records": len(all_records),
+            "total_dates": total_dates,
+            "dates_per_page": dates_per_page,
+            "auto_check_cutoff": auto_check_cutoff,
             "config_keys_simple": [
                 "openclaw_url",
                 "webhook_token",

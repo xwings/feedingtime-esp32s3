@@ -20,8 +20,9 @@
 <section class="records">
   <form method="post" id="records-form">
     <div class="records-head">
-      <h2>Records ({{ total_records }})</h2>
+      <h2>Records ({{ total_records }} across {{ total_dates }} day{{ '' if total_dates == 1 else 's' }})</h2>
       <div class="bulk-actions">
+        <button type="button" id="check-all-btn" class="ghost">Select all on page</button>
         <button type="submit" formaction="/records/save">Save</button>
         <button type="submit" formaction="/records/delete" class="danger"
                 onclick="return confirm('Delete the selected record(s)?')">Delete</button>
@@ -29,57 +30,71 @@
       </div>
     </div>
 
-    <table class="records-table">
-      <thead>
-        <tr>
-          <th><input type="checkbox" id="check-all" title="Select all on page"></th>
-          <th>Date</th>
-          <th>Start</th>
-          <th>Stop</th>
-          <th>Duration</th>
-          <th>ml</th>
-          <th>Notes</th>
-          <th>Device</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in records %}
-        <tr>
-          <td>
-            <input type="checkbox" name="record_id" value="{{ r.id }}" class="row-check"
-                   {% if page == 1 and loop.index <= default_sync_count %}checked{% endif %}>
-          </td>
-          <td>
-            <input type="date" name="date_{{ r.id }}"
-                   value="{{ r.start_epoch | localdate_input(tz) }}" required>
-          </td>
-          <td>
-            <input type="time" name="start_time_{{ r.id }}"
-                   value="{{ r.start_epoch | localtime_only(tz) }}" required>
-          </td>
-          <td>
-            <input type="time" name="stop_time_{{ r.id }}"
-                   value="{{ (r.stop_epoch | localtime_only(tz)) if r.stop_epoch else '' }}">
-          </td>
-          <td>{{ r.start_epoch | duration(r.stop_epoch) or '—' }}</td>
-          <td>
-            <input type="number" name="volume_ml_{{ r.id }}" min="0" step="1"
-                   value="{{ r.volume_ml if r.volume_ml is not none else '' }}">
-          </td>
-          <td>
-            <input type="text" name="notes_{{ r.id }}"
-                   value="{{ r.notes or '' }}">
-          </td>
-          <td>
-            <input type="text" name="device_id_{{ r.id }}"
-                   value="{{ r.device_id or '' }}" size="10">
-          </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="8" class="empty">No records yet.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    {% for g in groups %}
+    <div class="date-group" data-date="{{ g.date }}">
+      <div class="date-header">
+        <button type="button" class="fold-toggle" aria-label="Toggle">
+          <span class="chevron">▾</span>
+        </button>
+        <label class="date-select">
+          <input type="checkbox" class="date-check" title="Select all on {{ g.date }}">
+          <span class="date-label">{{ g.date }}</span>
+        </label>
+        <span class="date-count">{{ g.records | length }} record{{ '' if g.records|length == 1 else 's' }}</span>
+      </div>
+      <table class="records-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th>Date</th>
+            <th>Start</th>
+            <th>Stop</th>
+            <th>Duration</th>
+            <th>ml</th>
+            <th>Notes</th>
+            <th>Device</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in g.records %}
+          <tr>
+            <td>
+              <input type="checkbox" name="record_id" value="{{ r.id }}" class="row-check"
+                     {% if r.start_epoch >= auto_check_cutoff %}checked{% endif %}>
+            </td>
+            <td>
+              <input type="date" name="date_{{ r.id }}"
+                     value="{{ r.start_epoch | localdate_input(tz) }}" required>
+            </td>
+            <td>
+              <input type="time" name="start_time_{{ r.id }}"
+                     value="{{ r.start_epoch | localtime_only(tz) }}" required>
+            </td>
+            <td>
+              <input type="time" name="stop_time_{{ r.id }}"
+                     value="{{ (r.stop_epoch | localtime_only(tz)) if r.stop_epoch else '' }}">
+            </td>
+            <td>{{ r.start_epoch | duration(r.stop_epoch) or '—' }}</td>
+            <td>
+              <input type="number" name="volume_ml_{{ r.id }}" min="0" step="1"
+                     value="{{ r.volume_ml if r.volume_ml is not none else '' }}">
+            </td>
+            <td>
+              <input type="text" name="notes_{{ r.id }}"
+                     value="{{ r.notes or '' }}">
+            </td>
+            <td>
+              <input type="text" name="device_id_{{ r.id }}"
+                     value="{{ r.device_id or '' }}" size="10">
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="empty">No records yet.</p>
+    {% endfor %}
   </form>
 
   {% if total_pages > 1 %}
@@ -100,9 +115,44 @@
 </section>
 
 <script>
-  document.getElementById('check-all')?.addEventListener('change', function (e) {
-    document.querySelectorAll('.row-check').forEach(c => { c.checked = e.target.checked; });
-  });
+  (function () {
+    document.querySelectorAll('.date-group').forEach(group => {
+      const dateCheck = group.querySelector('.date-check');
+      const rowChecks = group.querySelectorAll('.row-check');
+      const fold = group.querySelector('.fold-toggle');
+
+      function syncDateCheck() {
+        const total = rowChecks.length;
+        const on = Array.from(rowChecks).filter(c => c.checked).length;
+        dateCheck.checked = on === total && total > 0;
+        dateCheck.indeterminate = on > 0 && on < total;
+      }
+
+      dateCheck?.addEventListener('change', e => {
+        rowChecks.forEach(c => { c.checked = e.target.checked; });
+        dateCheck.indeterminate = false;
+      });
+      rowChecks.forEach(c => c.addEventListener('change', syncDateCheck));
+      syncDateCheck();
+
+      fold?.addEventListener('click', () => {
+        group.classList.toggle('collapsed');
+      });
+    });
+
+    document.getElementById('check-all-btn')?.addEventListener('click', () => {
+      const all = document.querySelectorAll('.row-check');
+      const target = !Array.from(all).every(c => c.checked);
+      all.forEach(c => { c.checked = target; });
+      document.querySelectorAll('.date-group').forEach(g => {
+        const dc = g.querySelector('.date-check');
+        const rc = g.querySelectorAll('.row-check');
+        const on = Array.from(rc).filter(c => c.checked).length;
+        dc.checked = on === rc.length && rc.length > 0;
+        dc.indeterminate = on > 0 && on < rc.length;
+      });
+    });
+  })();
 </script>
 
 <section class="add-record">

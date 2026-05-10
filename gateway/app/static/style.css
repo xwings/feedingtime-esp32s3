@@ -96,6 +96,70 @@ section h2 {
   gap: 0.5rem;
 }
 
+.date-group {
+  border: 1px solid #232834;
+  border-radius: 4px;
+  margin-bottom: 0.6rem;
+  overflow: hidden;
+}
+
+.date-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  background: #1b1f27;
+  border-bottom: 1px solid #232834;
+}
+
+.date-group.collapsed .date-header { border-bottom-color: transparent; }
+.date-group.collapsed .records-table { display: none; }
+
+.fold-toggle {
+  background: transparent;
+  border: none;
+  padding: 0;
+  width: 1.6rem;
+  height: 1.6rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #a4b1c5;
+  cursor: pointer;
+}
+
+.fold-toggle .chevron {
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+
+.date-group.collapsed .fold-toggle .chevron { transform: rotate(-90deg); }
+
+.date-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  flex: 1;
+}
+
+.date-label {
+  font-weight: 600;
+  color: #f5c64a;
+}
+
+.date-count {
+  color: #7d8a9e;
+  font-size: 0.85rem;
+}
+
+.bulk-actions .ghost {
+  background: transparent;
+  border: 1px solid #2a2f3a;
+  color: #a4b1c5;
+}
+.bulk-actions .ghost:hover { background: #232834; }
+
 .records-table {
   width: 100%;
   border-collapse: collapse;
