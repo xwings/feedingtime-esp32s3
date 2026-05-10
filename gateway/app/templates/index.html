@@ -46,7 +46,6 @@
         <thead>
           <tr>
             <th></th>
-            <th>Date</th>
             <th>Start</th>
             <th>Stop</th>
             <th>Duration</th>
@@ -61,10 +60,8 @@
             <td>
               <input type="checkbox" name="record_id" value="{{ r.id }}" class="row-check"
                      {% if r.start_epoch >= auto_check_cutoff %}checked{% endif %}>
-            </td>
-            <td>
-              <input type="date" name="date_{{ r.id }}"
-                     value="{{ r.start_epoch | localdate_input(tz) }}" required>
+              <input type="hidden" name="date_{{ r.id }}"
+                     value="{{ r.start_epoch | localdate_input(tz) }}">
             </td>
             <td>
               <input type="time" name="start_time_{{ r.id }}"
