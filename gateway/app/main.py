@@ -235,6 +235,7 @@ async def ui_home(
                 "webhook_default_sync_count",
                 "auto_sync_enabled",
                 "auto_sync_hours",
+                "auto_stop_minutes",
                 "timezone",
                 "ui_show_count",
             ],

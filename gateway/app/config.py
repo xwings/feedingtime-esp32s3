@@ -27,6 +27,7 @@ DEFAULTS: dict = {
     ),
     "auto_sync_enabled": "0",
     "auto_sync_hours": "6",
+    "auto_stop_minutes": "15",
     "timezone": "UTC",
     "ui_show_count": "10",
 }

@@ -111,14 +111,31 @@ async def send_sync(record_ids: Optional[list] = None) -> tuple[bool, str]:
         return False, f"{type(e).__name__}: {e}"
 
 
+def _enforce_auto_stop(cfg: dict) -> None:
+    try:
+        minutes = int(cfg.get("auto_stop_minutes") or "15")
+    except ValueError:
+        minutes = 15
+    if minutes <= 0:
+        return
+    active = db.get_active()
+    if not active:
+        return
+    cap = int(active["start_epoch"]) + minutes * 60
+    if int(time.time()) >= cap:
+        if db.stop_active(stop_epoch=cap):
+            print(f"[scheduler] auto-stopped session {active['id']} at {minutes}min cap")
+
+
 async def scheduler_loop() -> None:
-    """Periodic auto-sync loop. Cancellable."""
+    """Periodic auto-sync + auto-stop loop. Cancellable."""
     global _last_auto_sync_ts
     try:
         while True:
             await asyncio.sleep(60)
             try:
                 cfg = config.load()
+                _enforce_auto_stop(cfg)
                 if (cfg.get("auto_sync_enabled") or "0").lower() not in ("1", "true", "yes"):
                     continue
                 try:

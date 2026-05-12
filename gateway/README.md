@@ -73,5 +73,6 @@ The scheduler checks once a minute and posts the newest
 | `webhook_record_format` | `{date} {start_time} -> {stop_time} ({duration}, {volume}ml) {notes}` | per-line template |
 | `auto_sync_enabled` | `0` | `1` to enable scheduler |
 | `auto_sync_hours` | `6` | interval in hours |
+| `auto_stop_minutes` | `15` | auto-stop an active session after this many minutes (0 disables) |
 | `timezone` | `UTC` | IANA name, e.g. `Asia/Shanghai` |
 | `ui_show_count` | `10` | dates per page on the web UI (records grouped by date; rows from the last 24h are pre-checked for upload) |
