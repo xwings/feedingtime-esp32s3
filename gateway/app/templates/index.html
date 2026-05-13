@@ -12,22 +12,25 @@
 <section class="feed-now {% if active %}active{% endif %}">
   <form method="post" action="/ui/feed" class="feed-now-form">
     {% if active %}
-    <span class="feed-now-counter live-elapsed" data-since="{{ active.start_epoch }}">…</span>
     <span class="feed-now-detail">
       since {{ active.start_epoch | localtime_only(tz) }}
       on <code>{{ active.device_id or '(unknown)' }}</code>
     </span>
+    <span class="feed-now-counter live-elapsed" data-since="{{ active.start_epoch }}">…</span>
     <button type="submit" class="danger feed-now-btn">Stop feeding</button>
     {% else %}
-    {% if last_finished %}
-    <span class="feed-now-counter live-elapsed" data-since="{{ last_finished.stop_epoch }}" data-suffix=" ago">…</span>
     <span class="feed-now-detail">
+      {% if last_finished %}
       last fed at {{ last_finished.stop_epoch | localtime_only(tz) }}
       on <code>{{ last_finished.device_id or '(unknown)' }}</code>
+      {% else %}
+      No feedings recorded yet.
+      {% endif %}
     </span>
-    {% else %}
-    <span class="feed-now-detail">No feedings recorded yet.</span>
-    {% endif %}
+    <span class="feed-now-counter {% if last_finished %}live-elapsed{% endif %}"
+          {% if last_finished %}data-since="{{ last_finished.stop_epoch }}" data-suffix=" ago"{% endif %}>
+      {% if last_finished %}…{% else %}—{% endif %}
+    </span>
     <button type="submit" class="feed-now-btn">Start feeding</button>
     {% endif %}
   </form>

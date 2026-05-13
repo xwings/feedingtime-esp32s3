@@ -310,17 +310,16 @@ code {
 .feed-now.active { border-color: #f5c64a; background: #1d1c14; }
 
 .feed-now-form {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 1rem;
-  flex-wrap: wrap;
 }
 
-.feed-now-btn {
-  padding: 0.6rem 1.4rem;
-  font-size: 1rem;
-  flex-shrink: 0;
-  margin-left: auto;
+.feed-now-detail {
+  color: #7d8a9e;
+  font-size: 0.9rem;
+  justify-self: start;
 }
 
 .feed-now-counter {
@@ -329,14 +328,24 @@ code {
   font-weight: 600;
   color: #f5c64a;
   font-variant-numeric: tabular-nums;
-  min-width: 5rem;
+  justify-self: center;
+  text-align: center;
 }
 
 .feed-now:not(.active) .feed-now-counter { color: #a4b1c5; }
 
-.feed-now-detail {
-  color: #7d8a9e;
-  font-size: 0.9rem;
-  flex: 1;
-  min-width: 0;
+.feed-now-btn {
+  padding: 0.6rem 1.4rem;
+  font-size: 1rem;
+  justify-self: end;
+}
+
+@media (max-width: 600px) {
+  .feed-now-form {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+  }
+  .feed-now-detail, .feed-now-btn { justify-self: stretch; }
+  .feed-now-btn { width: 100%; }
 }
