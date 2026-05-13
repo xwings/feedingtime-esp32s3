@@ -34,6 +34,7 @@ header nav a:hover { text-decoration: underline; }
 .tabs {
   display: flex;
   gap: 0.25rem;
+  margin-left: auto;
 }
 
 .tab-btn {
