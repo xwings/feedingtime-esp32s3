@@ -94,16 +94,6 @@ section h2 {
 .bulk-actions {
   display: flex;
   gap: 0.5rem;
-  justify-content: flex-end;
-  margin-bottom: 0.75rem;
-}
-
-.add-record-inline {
-  padding: 0.6rem 0.75rem;
-  margin-bottom: 0.75rem;
-  background: #1b1f27;
-  border: 1px solid #232834;
-  border-radius: 4px;
 }
 
 .date-group {
