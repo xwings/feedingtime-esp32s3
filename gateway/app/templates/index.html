@@ -58,16 +58,27 @@
 </script>
 
 <section class="records">
+  <div class="records-head">
+    <h2>Records ({{ total_records }} across {{ total_dates }} day{{ '' if total_dates == 1 else 's' }})</h2>
+  </div>
+
+  <form method="post" action="/records" class="row-form add-record-inline">
+    <label>Date <input type="date" name="date" value="{{ now_date }}" required></label>
+    <label>Start <input type="time" name="start_time" value="{{ now_time }}" required></label>
+    <label>Stop <input type="time" name="stop_time" value="{{ now_time }}"></label>
+    <label>ml <input type="number" name="volume_ml" min="0" step="1"></label>
+    <label>Notes <input type="text" name="notes"></label>
+    <label>Device <input type="text" name="device_id"></label>
+    <button type="submit">Add</button>
+  </form>
+
   <form method="post" id="records-form">
-    <div class="records-head">
-      <h2>Records ({{ total_records }} across {{ total_dates }} day{{ '' if total_dates == 1 else 's' }})</h2>
-      <div class="bulk-actions">
-        <button type="button" id="check-all-btn" class="ghost">Select all on page</button>
-        <button type="submit" formaction="/records/save">Save</button>
-        <button type="submit" formaction="/records/delete" class="danger"
-                onclick="return confirm('Delete the selected record(s)?')">Delete</button>
-        <button type="submit" formaction="/sync">Upload</button>
-      </div>
+    <div class="bulk-actions">
+      <button type="button" id="check-all-btn" class="ghost">Select all on page</button>
+      <button type="submit" formaction="/records/save">Save</button>
+      <button type="submit" formaction="/records/delete" class="danger"
+              onclick="return confirm('Delete the selected record(s)?')">Delete</button>
+      <button type="submit" formaction="/sync">Upload</button>
     </div>
 
     {% for g in groups %}
@@ -191,19 +202,6 @@
     });
   })();
 </script>
-
-<section class="add-record">
-  <h2>Add record</h2>
-  <form method="post" action="/records" class="row-form">
-    <label>Date <input type="date" name="date" value="{{ now_date }}" required></label>
-    <label>Start <input type="time" name="start_time" value="{{ now_time }}" required></label>
-    <label>Stop <input type="time" name="stop_time" value="{{ now_time }}"></label>
-    <label>ml <input type="number" name="volume_ml" min="0" step="1"></label>
-    <label>Notes <input type="text" name="notes"></label>
-    <label>Device <input type="text" name="device_id"></label>
-    <button type="submit">Add</button>
-  </form>
-</section>
 
 </div><!-- /tab-panel records -->
 
