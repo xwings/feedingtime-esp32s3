@@ -100,9 +100,8 @@
         </button>
         <label class="date-select">
           <input type="checkbox" class="date-check" title="Select all on {{ g.date }}">
-          <span class="date-label">{{ g.date }}</span>
+          <span class="date-label">{{ g.date }} ({{ g.records | length }})</span>
         </label>
-        <span class="date-count">{{ g.records | length }} record{{ '' if g.records|length == 1 else 's' }}</span>
       </div>
       <table class="records-table">
         <thead>
