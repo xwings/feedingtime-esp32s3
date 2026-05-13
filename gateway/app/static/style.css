@@ -312,29 +312,30 @@ code {
 .feed-now-form {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
-}
-
-.feed-now-info { flex: 1; min-width: 0; }
-
-.feed-now-label {
-  font-size: 0.85rem;
-  color: #a4b1c5;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.feed-now.active .feed-now-label { color: #f5c64a; }
-
-.feed-now-time {
-  font-size: 1rem;
-  margin-top: 0.2rem;
-  color: #d8dde4;
 }
 
 .feed-now-btn {
   padding: 0.6rem 1.4rem;
   font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.feed-now-counter {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #f5c64a;
+  font-variant-numeric: tabular-nums;
+  min-width: 5rem;
+}
+
+.feed-now:not(.active) .feed-now-counter { color: #a4b1c5; }
+
+.feed-now-detail {
+  color: #7d8a9e;
+  font-size: 0.9rem;
+  flex: 1;
+  min-width: 0;
 }

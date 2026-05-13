@@ -12,32 +12,50 @@
 <section class="feed-now {% if active %}active{% endif %}">
   <form method="post" action="/ui/feed" class="feed-now-form">
     {% if active %}
-    <div class="feed-now-info">
-      <div class="feed-now-label">Feeding now</div>
-      <div class="feed-now-time">
-        Started <strong>{{ active.start_epoch | localtime(tz) }}</strong>
-        ({{ active.start_epoch | duration(now_epoch) }})
-        on <code>{{ active.device_id or '(unknown)' }}</code>
-      </div>
-    </div>
     <button type="submit" class="danger feed-now-btn">Stop feeding</button>
+    <span class="feed-now-counter live-elapsed" data-since="{{ active.start_epoch }}">…</span>
+    <span class="feed-now-detail">
+      since {{ active.start_epoch | localtime_only(tz) }}
+      on <code>{{ active.device_id or '(unknown)' }}</code>
+    </span>
     {% else %}
-    <div class="feed-now-info">
-      <div class="feed-now-label">Idle</div>
-      <div class="feed-now-time">
-        {% if last_finished %}
-        Last fed <strong>{{ last_finished.stop_epoch | localtime(tz) }}</strong>
-        ({{ last_finished.stop_epoch | duration(now_epoch) }} ago)
-        on <code>{{ last_finished.device_id or '(unknown)' }}</code>
-        {% else %}
-        No feedings recorded yet.
-        {% endif %}
-      </div>
-    </div>
     <button type="submit" class="feed-now-btn">Start feeding</button>
+    {% if last_finished %}
+    <span class="feed-now-counter live-elapsed" data-since="{{ last_finished.stop_epoch }}" data-suffix=" ago">…</span>
+    <span class="feed-now-detail">
+      last fed at {{ last_finished.stop_epoch | localtime_only(tz) }}
+      on <code>{{ last_finished.device_id or '(unknown)' }}</code>
+    </span>
+    {% else %}
+    <span class="feed-now-detail">No feedings recorded yet.</span>
+    {% endif %}
     {% endif %}
   </form>
 </section>
+
+<script>
+  (function () {
+    function fmt(s) {
+      if (s < 0) s = 0;
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const sec = s % 60;
+      if (h > 0) return h + 'h ' + m + 'm';
+      if (m > 0) return m + 'm ' + String(sec).padStart(2, '0') + 's';
+      return sec + 's';
+    }
+    function tick() {
+      const now = Math.floor(Date.now() / 1000);
+      document.querySelectorAll('.live-elapsed').forEach(el => {
+        const since = parseInt(el.dataset.since, 10);
+        if (!Number.isFinite(since)) return;
+        el.textContent = fmt(now - since) + (el.dataset.suffix || '');
+      });
+    }
+    tick();
+    setInterval(tick, 1000);
+  })();
+</script>
 
 <section class="records">
   <form method="post" id="records-form">
