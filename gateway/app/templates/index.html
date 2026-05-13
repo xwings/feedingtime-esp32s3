@@ -12,14 +12,13 @@
 <section class="feed-now {% if active %}active{% endif %}">
   <form method="post" action="/ui/feed" class="feed-now-form">
     {% if active %}
-    <button type="submit" class="danger feed-now-btn">Stop feeding</button>
     <span class="feed-now-counter live-elapsed" data-since="{{ active.start_epoch }}">…</span>
     <span class="feed-now-detail">
       since {{ active.start_epoch | localtime_only(tz) }}
       on <code>{{ active.device_id or '(unknown)' }}</code>
     </span>
+    <button type="submit" class="danger feed-now-btn">Stop feeding</button>
     {% else %}
-    <button type="submit" class="feed-now-btn">Start feeding</button>
     {% if last_finished %}
     <span class="feed-now-counter live-elapsed" data-since="{{ last_finished.stop_epoch }}" data-suffix=" ago">…</span>
     <span class="feed-now-detail">
@@ -29,6 +28,7 @@
     {% else %}
     <span class="feed-now-detail">No feedings recorded yet.</span>
     {% endif %}
+    <button type="submit" class="feed-now-btn">Start feeding</button>
     {% endif %}
   </form>
 </section>
@@ -58,15 +58,21 @@
 </script>
 
 <section class="add-record">
-  <h2>Add record</h2>
-  <form method="post" action="/records" class="row-form">
-    <label>Date <input type="date" name="date" value="{{ now_date }}" required></label>
-    <label>Start <input type="time" name="start_time" value="{{ now_time }}" required></label>
-    <label>Stop <input type="time" name="stop_time" value="{{ now_time }}"></label>
-    <label>ml <input type="number" name="volume_ml" min="0" step="1"></label>
-    <label>Notes <input type="text" name="notes"></label>
-    <label>Device <input type="text" name="device_id"></label>
-    <button type="submit">Add</button>
+  <form method="post" action="/records">
+    <div class="records-head">
+      <h2>Add record</h2>
+      <div class="bulk-actions">
+        <button type="submit">Add</button>
+      </div>
+    </div>
+    <div class="row-form">
+      <label>Date <input type="date" name="date" value="{{ now_date }}" required></label>
+      <label>Start <input type="time" name="start_time" value="{{ now_time }}" required></label>
+      <label>Stop <input type="time" name="stop_time" value="{{ now_time }}"></label>
+      <label>ml <input type="number" name="volume_ml" min="0" step="1"></label>
+      <label>Notes <input type="text" name="notes"></label>
+      <label>Device <input type="text" name="device_id"></label>
+    </div>
   </form>
 </section>
 
