@@ -247,6 +247,8 @@ async def ui_home(
                 "auto_sync_enabled",
                 "auto_sync_hours",
                 "auto_stop_minutes",
+                "default_volume_ml",
+                "default_device_id",
                 "timezone",
                 "ui_show_count",
             ],

@@ -72,9 +72,11 @@
       <label>Date <input type="date" name="date" value="{{ now_date }}" required></label>
       <label>Start <input type="time" name="start_time" value="{{ now_time }}" required></label>
       <label>Stop <input type="time" name="stop_time" value="{{ now_time }}"></label>
-      <label>ml <input type="number" name="volume_ml" min="0" step="1"></label>
+      <label>ml <input type="number" name="volume_ml" min="0" step="1"
+                       value="{{ config.default_volume_ml or '' }}"></label>
       <label>Notes <input type="text" name="notes"></label>
-      <label>Device <input type="text" name="device_id"></label>
+      <label>Device <input type="text" name="device_id"
+                          value="{{ config.default_device_id or '' }}"></label>
     </div>
   </form>
 </section>

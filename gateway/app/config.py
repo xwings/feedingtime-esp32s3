@@ -28,6 +28,8 @@ DEFAULTS: dict = {
     "auto_sync_enabled": "0",
     "auto_sync_hours": "6",
     "auto_stop_minutes": "15",
+    "default_volume_ml": "",
+    "default_device_id": "",
     "timezone": "UTC",
     "ui_show_count": "10",
 }
