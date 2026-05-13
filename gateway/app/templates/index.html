@@ -9,13 +9,35 @@
 
 <div class="tab-panel active" data-tab="records">
 
-{% if active %}
-<section class="active">
-  <h2>Active feeding</h2>
-  <p>Started <strong>{{ active.start_epoch | localtime(tz) }}</strong>
-     on <code>{{ active.device_id or '(unknown)' }}</code></p>
+<section class="feed-now {% if active %}active{% endif %}">
+  <form method="post" action="/ui/feed" class="feed-now-form">
+    {% if active %}
+    <div class="feed-now-info">
+      <div class="feed-now-label">Feeding now</div>
+      <div class="feed-now-time">
+        Started <strong>{{ active.start_epoch | localtime(tz) }}</strong>
+        ({{ active.start_epoch | duration(now_epoch) }})
+        on <code>{{ active.device_id or '(unknown)' }}</code>
+      </div>
+    </div>
+    <button type="submit" class="danger feed-now-btn">Stop feeding</button>
+    {% else %}
+    <div class="feed-now-info">
+      <div class="feed-now-label">Idle</div>
+      <div class="feed-now-time">
+        {% if last_finished %}
+        Last fed <strong>{{ last_finished.stop_epoch | localtime(tz) }}</strong>
+        ({{ last_finished.stop_epoch | duration(now_epoch) }} ago)
+        on <code>{{ last_finished.device_id or '(unknown)' }}</code>
+        {% else %}
+        No feedings recorded yet.
+        {% endif %}
+      </div>
+    </div>
+    <button type="submit" class="feed-now-btn">Start feeding</button>
+    {% endif %}
+  </form>
 </section>
-{% endif %}
 
 <section class="records">
   <form method="post" id="records-form">

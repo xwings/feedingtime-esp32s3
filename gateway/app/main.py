@@ -52,6 +52,10 @@ def filter_duration(start: Optional[int], stop: Optional[int]) -> str:
     if not start or not stop:
         return ""
     d = int(stop) - int(start)
+    if d < 0:
+        d = 0
+    if d >= 3600:
+        return f"{d // 3600}h {(d % 3600) // 60}m"
     return f"{d // 60}m {d % 60}s"
 
 
@@ -205,13 +209,20 @@ async def ui_home(
     now_epoch = int(time.time())
     auto_check_cutoff = now_epoch - 86400
 
+    active = db.get_active()
+    last_finished = next(
+        (r for r in all_records if r.get("stop_epoch")), None
+    )
+
     now = datetime.now(tz=tz)
     return templates.TemplateResponse(
         "index.html",
         {
             "request": request,
             "groups": groups,
-            "active": db.get_active(),
+            "active": active,
+            "last_finished": last_finished,
+            "now_epoch": now_epoch,
             "config": cfg,
             "tz": tz_name,
             "now_date": now.strftime("%Y-%m-%d"),
@@ -243,6 +254,17 @@ async def ui_home(
             "sync_msg": msg or "",
         },
     )
+
+
+@app.post("/ui/feed")
+async def ui_feed_toggle():
+    ts = int(time.time())
+    active = db.get_active()
+    if active:
+        db.stop_active(stop_epoch=ts)
+    else:
+        db.create_record(start_epoch=ts, device_id="web")
+    return RedirectResponse("/", status_code=303)
 
 
 @app.post("/records")
